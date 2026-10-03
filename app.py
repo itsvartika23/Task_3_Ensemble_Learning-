@@ -3,103 +3,26 @@ import pandas as pd
 import numpy as np
 import joblib
 
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.decomposition import PCA
-
-
-# ==========================================
-# PAGE SETTINGS
-# ==========================================
-
-st.set_page_config(
-    page_title="Late Delivery Risk Prediction",
-    page_icon="📦",
-    layout="wide"
-)
-
-st.title("📦 Late Delivery Risk Prediction")
-st.write("Predict whether an order is at risk of late delivery.")
-
-
-# ==========================================
-# LOAD TRAINED MODEL
-# ==========================================
-
+#local trained files
 model = joblib.load("best_model.pkl")
+scaler = joblib.load("scaler.pkl")
+pca = joblib.load("pca.pkl")
+encoder = joblib.load("encoder.pkl")
 
+st.title("Late Delivery Risk Prediction")
+st.write("Enter order details to predict whether the order is at risk of late delivery.")
 
-# ==========================================
-# LOAD DATASET
-# ==========================================
+#numerical features
+pca_cols = ['Benefit per order', 'Sales per customer', 'Latitude', 'Longitude',
+       'Order Item Discount', 'Order Item Discount Rate',
+       'Order Item Product Price', 'Order Item Profit Ratio',
+       'Order Item Quantity', 'Sales', 'Order Item Total',
+       'Order Profit Per Order', 'Product Price', 'Product Status',
+       'Value per Item'
+]
 
-df = pd.read_csv("Data/DataCo.csv")
-
-
-# ==========================================
-# SAME CLEANING AS TRAINING
-# ==========================================
-
-df = df.dropna(subset=["Customer Zipcode"])
-
-df = df.drop(columns=["Order Zipcode"])
-
-
-# ==========================================
-# SAME FEATURE ENGINEERING AS TRAINING
-# ==========================================
-
-df["Shipping Delay"] = (
-    df["Days for shipping (real)"]
-    - df["Days for shipment (scheduled)"]
-)
-
-df["Value per Item"] = (
-    df["Order Item Total"]
-    / df["Order Item Quantity"]
-)
-
-
-# ==========================================
-# SAME PCA COLUMNS AS TRAINING
-# ==========================================
-
-num_cols = df.select_dtypes(include="number").columns
-
-pca_cols = num_cols.drop([
-    "Customer Id",
-    "Category Id",
-    "Product Category Id",
-    "Order Item Cardprod Id",
-    "Customer Zipcode",
-    "Late_delivery_risk",
-    "Days for shipping (real)",
-    "Days for shipment (scheduled)",
-    "Shipping Delay"
-])
-
-
-# ==========================================
-# FIT SCALER AND PCA
-# SAME AS NOTEBOOK
-# ==========================================
-
-X_pca = df[pca_cols]
-
-sc = StandardScaler()
-
-X_scaled = sc.fit_transform(X_pca)
-
-
-newpca = PCA(n_components=6)
-
-m = newpca.fit_transform(X_scaled)
-
-
-# ==========================================
-# SAME CATEGORICAL COLUMNS AS TRAINING
-# ==========================================
-
-cols = [
+#categorical columns
+cat_cols = [
     "Category Name",
     "Customer Country",
     "Customer City",
@@ -113,176 +36,60 @@ cols = [
 ]
 
 
-# ==========================================
-# FIT ENCODER
-# SAME AS NOTEBOOK
-# ==========================================
+#user input
+st.header("Order Details")
 
-enc = OneHotEncoder(
-    handle_unknown="ignore",
-    sparse_output=False
-)
+num_values = {}
 
-cat_data = enc.fit_transform(df[cols])
-
-
-# ==========================================
-# USER INPUT
-# ==========================================
-
-st.header("Enter Order Details")
-
-
-# ------------------------------------------
-# CATEGORICAL INPUTS
-# ------------------------------------------
-
-st.subheader("Order Information")
-
-cat_input = {}
-
-col1, col2 = st.columns(2)
-
-for i, col in enumerate(cols):
-
-    with col1 if i % 2 == 0 else col2:
-
-        cat_input[col] = st.selectbox(
-            col,
-            sorted(df[col].dropna().unique())
-        )
-
-
-# ------------------------------------------
-# NUMERICAL INPUTS
-# ------------------------------------------
-
-st.subheader("Numerical Features")
-
-num_input = {}
-
-hidden_features = ["Latitude", "Longitude"]
-
-visible_pca_cols = [
-    col for col in pca_cols
-    if col not in hidden_features
-]
-
-col1, col2 = st.columns(2)
-
-for i, col in enumerate(visible_pca_cols):
-
-    with col1 if i % 2 == 0 else col2:
-
-        default_value = float(df[col].median())
-
-        num_input[col] = st.number_input(
-            col,
-            value=default_value
-        )
-
-# Keep these values internally for the trained model
-num_input["Latitude"] = float(df["Latitude"].median())
-num_input["Longitude"] = float(df["Longitude"].median())
-
-# Keep exact training feature order
-num_input = {
-    col: num_input[col]
-    for col in pca_cols
-}
-
-
-# ==========================================
-# PREDICTION BUTTON
-# ==========================================
-
-if st.button("🔮 Predict Late Delivery Risk"):
-
-    # --------------------------------------
-    # Create numerical input dataframe
-    # --------------------------------------
-
-    numerical_input = pd.DataFrame(
-        [num_input]
+for col in pca_cols:
+    num_values[col] = st.number_input(
+        col,
+        value=0.0
     )
 
-    # Make sure columns are in same order
-    numerical_input = numerical_input[pca_cols]
+cat_values = {}
 
+for i, col in enumerate(cat_cols):
+    categories = encoder.categories_[i]
 
-    # --------------------------------------
-    # Apply SAME scaler
-    # --------------------------------------
-
-    numerical_scaled = sc.transform(
-        numerical_input
+    cat_values[col] = st.selectbox(
+        col,
+        categories
     )
 
 
-    # --------------------------------------
-    # Apply SAME PCA
-    # --------------------------------------
+#prediction
+if st.button("Predict"):
 
-    numerical_pca = newpca.transform(
-        numerical_scaled
-    )
+    # Numerical dataframe
+    num_df = pd.DataFrame([num_values])
 
+    #correct cols order
+    num_df=num_df[pca_cols]
 
-    # --------------------------------------
-    # Create categorical dataframe
-    # --------------------------------------
+    # Scale numerical data
+    scaled_data = scaler.transform(num_df)
 
-    categorical_input = pd.DataFrame(
-        [cat_input]
-    )
+    # PCA transformation
+    pca_data = pca.transform(scaled_data)
 
-    categorical_input = categorical_input[cols]
+    # Categorical dataframe
+    cat_df = pd.DataFrame([cat_values])
 
+    #correct col order
+    cat_df=cat_df[cat_cols]
 
-    # --------------------------------------
-    # Apply SAME encoder
-    # --------------------------------------
+    # Encode categorical data
+    cat_data = encoder.transform(cat_df)
 
-    categorical_encoded = enc.transform(
-        categorical_input
-    )
+    # Combine PCA + categorical data
+    final_input = np.hstack((pca_data, cat_data))
 
-
-    # --------------------------------------
-    # Combine PCA + categorical features
-    # --------------------------------------
-
-    final_input = np.hstack(
-        (
-            numerical_pca,
-            categorical_encoded
-        )
-    )
-
-
-    # --------------------------------------
     # Prediction
-    # --------------------------------------
-
     prediction = model.predict(final_input)[0]
 
-
-    # --------------------------------------
-    # Display result
-    # --------------------------------------
-
-    st.subheader("Prediction Result")
-
+    # Result
     if prediction == 1:
-
-        st.error(
-            "⚠️ High Risk: The order is predicted "
-            "to have a late delivery."
-        )
-
+        st.error(" High Risk of Late Delivery")
     else:
-
-        st.success(
-            "✅ Low Risk: The order is predicted "
-            "not to have a late delivery."
-        )
+        st.success(" Low Risk of Late Delivery")
